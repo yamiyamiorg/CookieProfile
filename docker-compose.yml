@@ -1,0 +1,11 @@
+services:
+  cookie-profile:
+    build: .
+    container_name: cookie-profile
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - cookie_profile_data:/data
+volumes:
+  cookie_profile_data:
