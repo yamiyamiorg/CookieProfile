@@ -91,16 +91,6 @@ class Database:
             PRIMARY KEY (guild_id, user_id)
         )
         """)
-        await self._exec("""
-        CREATE TABLE IF NOT EXISTS scheduled_deletes(
-            guild_id INTEGER NOT NULL,
-            channel_id INTEGER NOT NULL,
-            message_id INTEGER NOT NULL,
-            delete_at TEXT NOT NULL,
-            PRIMARY KEY (guild_id, channel_id, message_id)
-        )
-        """)
-
         # ---- schema migration (backward compatible) ----
         # Older deployments may have different column names. We add missing columns in-place.
         cols = await self._fetchall("PRAGMA table_info(guild_config)")
@@ -214,25 +204,3 @@ class Database:
         UPDATE profiles SET public_message_id=?
         WHERE guild_id=? AND user_id=?
         """, (message_id, guild_id, user_id))
-
-    # scheduled deletes
-    async def schedule_delete(self, guild_id: int, channel_id: int, message_id: int, delete_at: datetime) -> None:
-        await self._exec("""
-        INSERT OR REPLACE INTO scheduled_deletes(guild_id, channel_id, message_id, delete_at)
-        VALUES(?,?,?,?)
-        """, (guild_id, channel_id, message_id, dt_to_str(delete_at)))
-
-    async def due_deletes(self, limit: int = 50) -> list[tuple[int,int,int,datetime]]:
-        now = utcnow()
-        rows = await self._fetchall("""
-        SELECT guild_id, channel_id, message_id, delete_at FROM scheduled_deletes
-        WHERE delete_at <= ?
-        ORDER BY delete_at ASC
-        LIMIT ?
-        """, (dt_to_str(now), limit))
-        return [(r["guild_id"], r["channel_id"], r["message_id"], str_to_dt(r["delete_at"])) for r in rows]
-
-    async def remove_scheduled_delete(self, guild_id: int, channel_id: int, message_id: int) -> None:
-        await self._exec("""
-        DELETE FROM scheduled_deletes WHERE guild_id=? AND channel_id=? AND message_id=?
-        """, (guild_id, channel_id, message_id))
