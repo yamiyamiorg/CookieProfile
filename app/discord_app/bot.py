@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 from ..config import AppConfig
 from ..storage.db import Database, utcnow
 from ..services.rate_limit import RateLimiter
+from ..services.vc_autopost import VCAutoPostLimiter
 from ..services.audit import make_log_line
 from ..services import render
 from .views import ProfilePanelView
@@ -22,6 +24,8 @@ class CookieProfileBot(commands.Bot):
         self.cfg = cfg
         self.db = Database(cfg.database_path)
         self.limiter = RateLimiter()
+        self.vc_autopost_limiter = VCAutoPostLimiter()
+        self._vc_autopost_tasks: dict[tuple[int, int], asyncio.Task] = {}
 
         # IMPORTANT: do not create discord.ui.View in __init__
         self.panel_view: ProfilePanelView | None = None
@@ -191,6 +195,78 @@ class CookieProfileBot(commands.Bot):
             return
 
         await self.bump_panel(message.guild.id)
+
+    async def _schedule_vc_autopost(self, member: discord.Member, channel: discord.abc.GuildChannel) -> None:
+        key = (member.guild.id, member.id)
+        existing = self._vc_autopost_tasks.get(key)
+        if existing:
+            existing.cancel()
+
+        async def delayed_post() -> None:
+            try:
+                await asyncio.sleep(10)
+                current = member.voice
+                if current is None or current.channel is None or current.channel.id != channel.id:
+                    return
+                if not self.vc_autopost_limiter.allow(member.guild.id, member.id, channel.id):
+                    return
+                prof = await self.db.get_profile(member.guild.id, member.id)
+                if not (prof.name or "").strip():
+                    return
+                emb = render.build_profile_embed(
+                    display_name=member.display_name,
+                    avatar_url=member.display_avatar.url if member.display_avatar else None,
+                    state=prof.state,
+                    state_updated_at=prof.state_updated_at,
+                    name=prof.name,
+                    condition=prof.condition,
+                    hobby=prof.hobby,
+                    care=prof.care,
+                    one=prof.one,
+                )
+                target = None
+                if hasattr(channel, "send"):
+                    target = channel
+                else:
+                    text_channel = getattr(channel, "text_channel", None)
+                    if text_channel:
+                        target = text_channel
+                if target is None:
+                    return
+                try:
+                    await target.send(
+                        content=f"🍪Profile <@{member.id}>",
+                        embed=emb,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                except Exception:
+                    return
+            finally:
+                if self._vc_autopost_tasks.get(key) is task:
+                    self._vc_autopost_tasks.pop(key, None)
+
+        task = asyncio.create_task(delayed_post())
+        self._vc_autopost_tasks[key] = task
+
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if member.bot:
+            return
+        before_ch = before.channel
+        after_ch = after.channel
+        if before_ch is not None and after_ch is not None and before_ch.id == after_ch.id:
+            return
+        key = (member.guild.id, member.id)
+        existing = self._vc_autopost_tasks.get(key)
+        if existing:
+            existing.cancel()
+        if after_ch is None:
+            return
+        await self._schedule_vc_autopost(member, after_ch)
 
     async def upsert_public_profile(self, interaction: discord.Interaction) -> None:
         gid = interaction.guild_id
