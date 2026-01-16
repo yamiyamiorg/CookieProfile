@@ -3,21 +3,18 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-from datetime import timedelta
 
 from ..config import AppConfig
 from ..storage.db import Database, utcnow
 from ..services.rate_limit import RateLimiter
 from ..services.audit import make_log_line
-from ..services.scheduler import DeleteScheduler
 from ..services import render
-from .views import ProfilePanelView, PConfirmView
+from .views import ProfilePanelView
 
 class CookieProfileBot(commands.Bot):
     def __init__(self, cfg: AppConfig):
         intents = discord.Intents.default()
         intents.guilds = True
-        intents.voice_states = True  # for VC membership check
         intents.messages = True  # needed for bump (on_message)
         intents.message_content = False
 
@@ -25,7 +22,6 @@ class CookieProfileBot(commands.Bot):
         self.cfg = cfg
         self.db = Database(cfg.database_path)
         self.limiter = RateLimiter()
-        self.scheduler = DeleteScheduler(self, self.db)
 
         # IMPORTANT: do not create discord.ui.View in __init__
         self.panel_view: ProfilePanelView | None = None
@@ -37,8 +33,6 @@ class CookieProfileBot(commands.Bot):
         # Register persistent view after loop is running
         self.panel_view = ProfilePanelView(self)
         self.add_view(self.panel_view)
-
-        self.scheduler.start()
 
 
     async def on_ready(self) -> None:
@@ -66,9 +60,8 @@ class CookieProfileBot(commands.Bot):
 
     async def close(self) -> None:
         try:
-            await self.scheduler.stop()
-        finally:
             await self.db.close()
+        finally:
             await super().close()
 
     async def audit(self, interaction: discord.Interaction, *, action: str, result: str, reason: str | None) -> None:
@@ -298,29 +291,6 @@ class SetupCommands(app_commands.Group):
         await interaction.response.send_message("入口メッセージを設置/更新しました。", ephemeral=True)
 
 
-class PCommand:
-    def __init__(self, bot: CookieProfileBot):
-        self.bot = bot
-
-    @app_commands.command(name="p", description="VC内チャットに一時的に🍪Profileを表示（確認あり）")
-    async def p(self, interaction: discord.Interaction):
-        gid = interaction.guild_id
-        if gid is None:
-            return
-        if not self.bot.limiter.allow(gid, interaction.user.id, "p_confirm"):
-            await interaction.response.send_message("連続操作は制限されています。少し待ってから試してください。", ephemeral=True)
-            await self.bot.audit(interaction, action="p_confirm", result="ng", reason="rate_limit")
-            return
-
-        _ = await self.bot.db.get_profile(gid, interaction.user.id)
-        view = PConfirmView(self.bot)
-        await interaction.response.send_message(
-            "このVC内チャットにあなたの🍪Profileを投稿しますか？\n投稿すると全員に表示されます。\n投稿は30分後に自動削除されます。",
-            ephemeral=True,
-            view=view,
-        )
-        await self.bot.audit(interaction, action="p_confirm", result="ok", reason=None)
-
 def create_bot() -> CookieProfileBot:
     load_dotenv()
     cfg = AppConfig.from_env()
@@ -329,9 +299,5 @@ def create_bot() -> CookieProfileBot:
     # /profilesetup run
     setup_group = SetupCommands(bot)
     bot.tree.add_command(setup_group)
-
-    # /p
-    p = PCommand(bot)
-    bot.tree.add_command(p.p)
 
     return bot

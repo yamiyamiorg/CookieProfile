@@ -7,8 +7,6 @@ from typing import Dict, Tuple
 class RateLimits:
     modal_save_sec: int = 60
     state_change_sec: int = 20
-    p_confirm_sec: int = 20
-    p_post_sec: int = 120
     panel_bump_sec: int = 30  # bump at most once per 30s per guild
 
 DEFAULT_LIMITS = RateLimits()
@@ -22,8 +20,6 @@ class RateLimiter:
         return {
             "modal_save": self.limits.modal_save_sec,
             "state_change": self.limits.state_change_sec,
-            "p_confirm": self.limits.p_confirm_sec,
-            "p_post": self.limits.p_post_sec,
             "panel_bump": self.limits.panel_bump_sec,
         }.get(action, 0)
 
