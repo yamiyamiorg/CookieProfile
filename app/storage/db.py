@@ -126,6 +126,17 @@ class Database:
         if "public_message_id" not in pnames:
             await self._exec("ALTER TABLE profiles ADD COLUMN public_message_id INTEGER")
 
+        # ---- data migration: state labels ----
+        has_legacy_energy = await self._fetchone("SELECT 1 FROM profiles WHERE state='省エネ' LIMIT 1")
+        await self._exec("UPDATE profiles SET state='元気' WHERE state='好調'")
+        await self._exec("UPDATE profiles SET state='通常' WHERE state='普通'")
+        await self._exec("UPDATE profiles SET state='しんどい' WHERE state='不調'")
+        await self._exec("UPDATE profiles SET state='低速' WHERE state='省エネ'")
+        if has_legacy_energy:
+            await self._exec("UPDATE profiles SET state='しんどい' WHERE state='休憩'")
+        else:
+            await self._exec("UPDATE profiles SET state='低速' WHERE state='休憩'")
+
     # config
     async def get_guild_config(self, guild_id: int) -> GuildConfigData:
         row = await self._fetchone("SELECT * FROM guild_config WHERE guild_id=?", (guild_id,))

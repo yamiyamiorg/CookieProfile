@@ -116,21 +116,21 @@ class ProfilePanelView(discord.ui.View):
         self.bot = bot
 
     # Row 0: state buttons (color coded)
-    @discord.ui.button(label="好調", style=discord.ButtonStyle.success, custom_id="panel:state:good", row=0)
+    @discord.ui.button(label="元気", style=discord.ButtonStyle.success, custom_id="panel:state:good", row=0)
     async def st_good(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "好調")
+        await self._handle_state(interaction, "元気")
 
     @discord.ui.button(label="通常", style=discord.ButtonStyle.primary, custom_id="panel:state:norm", row=0)
     async def st_norm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_state(interaction, "通常")
 
-    @discord.ui.button(label="省エネ", style=discord.ButtonStyle.secondary, custom_id="panel:state:low", row=0)
+    @discord.ui.button(label="低速", style=discord.ButtonStyle.secondary, custom_id="panel:state:low", row=0)
     async def st_low(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "省エネ")
+        await self._handle_state(interaction, "低速")
 
-    @discord.ui.button(label="休憩", style=discord.ButtonStyle.danger, custom_id="panel:state:rest", row=0)
+    @discord.ui.button(label="しんどい", style=discord.ButtonStyle.danger, custom_id="panel:state:rest", row=0)
     async def st_rest(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "休憩")
+        await self._handle_state(interaction, "しんどい")
 
     # Row 1: actions (color coded)
     @discord.ui.button(label="編集", style=discord.ButtonStyle.primary, custom_id="panel:edit", row=1)
@@ -199,21 +199,21 @@ class PConfirmView(discord.ui.View):
         self.bot = bot
 
     # Row 0: state buttons (color coded)
-    @discord.ui.button(label="好調", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="元気", style=discord.ButtonStyle.success, row=0)
     async def st_good(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "好調")
+        await self._state(interaction, "元気")
 
     @discord.ui.button(label="通常", style=discord.ButtonStyle.primary, row=0)
     async def st_norm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._state(interaction, "通常")
 
-    @discord.ui.button(label="省エネ", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="低速", style=discord.ButtonStyle.secondary, row=0)
     async def st_low(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "省エネ")
+        await self._state(interaction, "低速")
 
-    @discord.ui.button(label="休憩", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="しんどい", style=discord.ButtonStyle.danger, row=0)
     async def st_rest(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "休憩")
+        await self._state(interaction, "しんどい")
 
     # Row 1: actions (color coded)
     @discord.ui.button(label="プレビュー", style=discord.ButtonStyle.secondary, row=1)

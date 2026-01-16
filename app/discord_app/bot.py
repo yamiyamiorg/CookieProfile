@@ -111,49 +111,23 @@ class CookieProfileBot(commands.Bot):
                 pass
 
     async def ensure_sticky_panel(self, guild_id: int) -> None:
-        cfg = await self.db.get_guild_config(guild_id)
-        if not cfg.channel_id:
-            return
-        ch = self.get_channel(cfg.channel_id)
-        if ch is None:
-            try:
-                ch = await self.fetch_channel(cfg.channel_id)
-            except Exception:
-                return
-
-        emb = render.build_panel_embed()
-
-        # if old exists, try edit, else create
-        if cfg.panel_message_id:
-            try:
-                msg = await ch.fetch_message(cfg.panel_message_id)
-                await msg.edit(embed=emb, view=self.panel_view)
-                return
-            except discord.NotFound:
-                pass
-            except Exception:
-                pass
-
-        # create new
-        try:
-            msg = await ch.send(embed=emb, view=self.panel_view)
-            await self.db.set_panel_message_id(guild_id, msg.id)
-        except Exception:
-            return
-
+        await self._post_panel(guild_id, rate_limited=False)
 
     async def bump_panel(self, guild_id: int) -> None:
         """
-        Bump (move) the sticky panel to the bottom by re-sending it.
+        Bump (move) the entry panel to the bottom by re-sending it.
         This creates a new message ID, so we update panel_message_id accordingly.
         Rate-limited via RateLimiter (panel_bump).
         """
+        await self._post_panel(guild_id, rate_limited=True)
+
+    async def _post_panel(self, guild_id: int, *, rate_limited: bool) -> None:
         cfg = await self.db.get_guild_config(guild_id)
         if not cfg.channel_id:
             return
 
         # guild-level rate limit (use user_id=0 as system key)
-        if not self.limiter.allow(guild_id, 0, "panel_bump"):
+        if rate_limited and not self.limiter.allow(guild_id, 0, "panel_bump"):
             return
 
         ch = self.get_channel(cfg.channel_id)
@@ -233,7 +207,6 @@ class CookieProfileBot(commands.Bot):
                 msg = await ch.send(content=f"🍪Profile <@{interaction.user.id}>", embed=emb, allowed_mentions=discord.AllowedMentions(users=[interaction.user]))
                 await self.db.set_public_message_id(gid, interaction.user.id, msg.id)
                 await self.bump_panel(gid)
-                await self.bump_panel(gid)
                 return
             except Exception:
                 return
@@ -290,10 +263,8 @@ class SetupCommands(app_commands.Group):
             except Exception:
                 pass
 
-        # Ensure (edit-or-create) sticky panel in the configured channel
+        # Post new panel and remove old one (best-effort)
         await self.bot.ensure_sticky_panel(gid)
-        # Make sure the panel is the latest message (bump)
-        await self.bot.bump_panel(gid)
 
         await interaction.response.send_message("入口メッセージを設置/更新しました。", ephemeral=True)
 
