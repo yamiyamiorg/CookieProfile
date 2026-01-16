@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-STATE_CHOICES = ("好調", "通常", "省エネ", "休憩")
+STATE_CHOICES = ("元気", "通常", "低速", "しんどい")
 
 @dataclass
 class ProfileData:

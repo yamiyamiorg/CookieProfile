@@ -1,23 +1,22 @@
 from __future__ import annotations
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-from datetime import timedelta
 
 from ..config import AppConfig
 from ..storage.db import Database, utcnow
 from ..services.rate_limit import RateLimiter
+from ..services.vc_autopost import VCAutoPostLimiter
 from ..services.audit import make_log_line
-from ..services.scheduler import DeleteScheduler
 from ..services import render
-from .views import ProfilePanelView, PConfirmView
+from .views import ProfilePanelView
 
 class CookieProfileBot(commands.Bot):
     def __init__(self, cfg: AppConfig):
         intents = discord.Intents.default()
         intents.guilds = True
-        intents.voice_states = True  # for VC membership check
         intents.messages = True  # needed for bump (on_message)
         intents.message_content = False
 
@@ -25,7 +24,8 @@ class CookieProfileBot(commands.Bot):
         self.cfg = cfg
         self.db = Database(cfg.database_path)
         self.limiter = RateLimiter()
-        self.scheduler = DeleteScheduler(self, self.db)
+        self.vc_autopost_limiter = VCAutoPostLimiter()
+        self._vc_autopost_tasks: dict[tuple[int, int], asyncio.Task] = {}
 
         # IMPORTANT: do not create discord.ui.View in __init__
         self.panel_view: ProfilePanelView | None = None
@@ -37,8 +37,6 @@ class CookieProfileBot(commands.Bot):
         # Register persistent view after loop is running
         self.panel_view = ProfilePanelView(self)
         self.add_view(self.panel_view)
-
-        self.scheduler.start()
 
 
     async def on_ready(self) -> None:
@@ -66,9 +64,8 @@ class CookieProfileBot(commands.Bot):
 
     async def close(self) -> None:
         try:
-            await self.scheduler.stop()
-        finally:
             await self.db.close()
+        finally:
             await super().close()
 
     async def audit(self, interaction: discord.Interaction, *, action: str, result: str, reason: str | None) -> None:
@@ -111,49 +108,23 @@ class CookieProfileBot(commands.Bot):
                 pass
 
     async def ensure_sticky_panel(self, guild_id: int) -> None:
-        cfg = await self.db.get_guild_config(guild_id)
-        if not cfg.channel_id:
-            return
-        ch = self.get_channel(cfg.channel_id)
-        if ch is None:
-            try:
-                ch = await self.fetch_channel(cfg.channel_id)
-            except Exception:
-                return
-
-        emb = render.build_panel_embed()
-
-        # if old exists, try edit, else create
-        if cfg.panel_message_id:
-            try:
-                msg = await ch.fetch_message(cfg.panel_message_id)
-                await msg.edit(embed=emb, view=self.panel_view)
-                return
-            except discord.NotFound:
-                pass
-            except Exception:
-                pass
-
-        # create new
-        try:
-            msg = await ch.send(embed=emb, view=self.panel_view)
-            await self.db.set_panel_message_id(guild_id, msg.id)
-        except Exception:
-            return
-
+        await self._post_panel(guild_id, rate_limited=False)
 
     async def bump_panel(self, guild_id: int) -> None:
         """
-        Bump (move) the sticky panel to the bottom by re-sending it.
+        Bump (move) the entry panel to the bottom by re-sending it.
         This creates a new message ID, so we update panel_message_id accordingly.
         Rate-limited via RateLimiter (panel_bump).
         """
+        await self._post_panel(guild_id, rate_limited=True)
+
+    async def _post_panel(self, guild_id: int, *, rate_limited: bool) -> None:
         cfg = await self.db.get_guild_config(guild_id)
         if not cfg.channel_id:
             return
 
         # guild-level rate limit (use user_id=0 as system key)
-        if not self.limiter.allow(guild_id, 0, "panel_bump"):
+        if rate_limited and not self.limiter.allow(guild_id, 0, "panel_bump"):
             return
 
         ch = self.get_channel(cfg.channel_id)
@@ -199,6 +170,78 @@ class CookieProfileBot(commands.Bot):
 
         await self.bump_panel(message.guild.id)
 
+    async def _schedule_vc_autopost(self, member: discord.Member, channel: discord.abc.GuildChannel) -> None:
+        key = (member.guild.id, member.id)
+        existing = self._vc_autopost_tasks.get(key)
+        if existing:
+            existing.cancel()
+
+        async def delayed_post() -> None:
+            try:
+                await asyncio.sleep(10)
+                current = member.voice
+                if current is None or current.channel is None or current.channel.id != channel.id:
+                    return
+                if not self.vc_autopost_limiter.allow(member.guild.id, member.id, channel.id):
+                    return
+                prof = await self.db.get_profile(member.guild.id, member.id)
+                if not (prof.name or "").strip():
+                    return
+                emb = render.build_profile_embed(
+                    display_name=member.display_name,
+                    avatar_url=member.display_avatar.url if member.display_avatar else None,
+                    state=prof.state,
+                    state_updated_at=prof.state_updated_at,
+                    name=prof.name,
+                    condition=prof.condition,
+                    hobby=prof.hobby,
+                    care=prof.care,
+                    one=prof.one,
+                )
+                target = None
+                if hasattr(channel, "send"):
+                    target = channel
+                else:
+                    text_channel = getattr(channel, "text_channel", None)
+                    if text_channel:
+                        target = text_channel
+                if target is None:
+                    return
+                try:
+                    await target.send(
+                        content=f"🍪Profile <@{member.id}>",
+                        embed=emb,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                except Exception:
+                    return
+            finally:
+                if self._vc_autopost_tasks.get(key) is task:
+                    self._vc_autopost_tasks.pop(key, None)
+
+        task = asyncio.create_task(delayed_post())
+        self._vc_autopost_tasks[key] = task
+
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if member.bot:
+            return
+        before_ch = before.channel
+        after_ch = after.channel
+        if before_ch is not None and after_ch is not None and before_ch.id == after_ch.id:
+            return
+        key = (member.guild.id, member.id)
+        existing = self._vc_autopost_tasks.get(key)
+        if existing:
+            existing.cancel()
+        if after_ch is None:
+            return
+        await self._schedule_vc_autopost(member, after_ch)
+
     async def upsert_public_profile(self, interaction: discord.Interaction) -> None:
         gid = interaction.guild_id
         if gid is None:
@@ -232,7 +275,6 @@ class CookieProfileBot(commands.Bot):
             try:
                 msg = await ch.send(content=f"🍪Profile <@{interaction.user.id}>", embed=emb, allowed_mentions=discord.AllowedMentions(users=[interaction.user]))
                 await self.db.set_public_message_id(gid, interaction.user.id, msg.id)
-                await self.bump_panel(gid)
                 await self.bump_panel(gid)
                 return
             except Exception:
@@ -290,36 +332,11 @@ class SetupCommands(app_commands.Group):
             except Exception:
                 pass
 
-        # Ensure (edit-or-create) sticky panel in the configured channel
+        # Post new panel and remove old one (best-effort)
         await self.bot.ensure_sticky_panel(gid)
-        # Make sure the panel is the latest message (bump)
-        await self.bot.bump_panel(gid)
 
         await interaction.response.send_message("入口メッセージを設置/更新しました。", ephemeral=True)
 
-
-class PCommand:
-    def __init__(self, bot: CookieProfileBot):
-        self.bot = bot
-
-    @app_commands.command(name="p", description="VC内チャットに一時的に🍪Profileを表示（確認あり）")
-    async def p(self, interaction: discord.Interaction):
-        gid = interaction.guild_id
-        if gid is None:
-            return
-        if not self.bot.limiter.allow(gid, interaction.user.id, "p_confirm"):
-            await interaction.response.send_message("連続操作は制限されています。少し待ってから試してください。", ephemeral=True)
-            await self.bot.audit(interaction, action="p_confirm", result="ng", reason="rate_limit")
-            return
-
-        _ = await self.bot.db.get_profile(gid, interaction.user.id)
-        view = PConfirmView(self.bot)
-        await interaction.response.send_message(
-            "このVC内チャットにあなたの🍪Profileを投稿しますか？\n投稿すると全員に表示されます。\n投稿は30分後に自動削除されます。",
-            ephemeral=True,
-            view=view,
-        )
-        await self.bot.audit(interaction, action="p_confirm", result="ok", reason=None)
 
 def create_bot() -> CookieProfileBot:
     load_dotenv()
@@ -329,9 +346,5 @@ def create_bot() -> CookieProfileBot:
     # /profilesetup run
     setup_group = SetupCommands(bot)
     bot.tree.add_command(setup_group)
-
-    # /p
-    p = PCommand(bot)
-    bot.tree.add_command(p.p)
 
     return bot
