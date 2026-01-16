@@ -126,6 +126,11 @@ class Database:
         if "public_message_id" not in pnames:
             await self._exec("ALTER TABLE profiles ADD COLUMN public_message_id INTEGER")
 
+        # Normalize legacy state labels to current ones.
+        await self._exec("UPDATE profiles SET state='元気' WHERE state='好調'")
+        await self._exec("UPDATE profiles SET state='低速' WHERE state='省エネ'")
+        await self._exec("UPDATE profiles SET state='しんどい' WHERE state='休憩'")
+
     # config
     async def get_guild_config(self, guild_id: int) -> GuildConfigData:
         row = await self._fetchone("SELECT * FROM guild_config WHERE guild_id=?", (guild_id,))
