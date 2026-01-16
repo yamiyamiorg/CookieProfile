@@ -16,9 +16,9 @@ class TestDB(unittest.IsolatedAsyncioTestCase):
     async def test_profile_create(self):
         p = await self.db.get_profile(1, 2)
         self.assertEqual(p.state, "通常")
-        await self.db.update_state(1, 2, "好調")
+        await self.db.update_state(1, 2, "元気")
         p2 = await self.db.get_profile(1, 2)
-        self.assertEqual(p2.state, "好調")
+        self.assertEqual(p2.state, "元気")
 
     async def test_config(self):
         await self.db.set_guild_config(1, channel_id=10, log_channel_id=None)
