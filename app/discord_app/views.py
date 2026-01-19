@@ -166,12 +166,6 @@ class ProfilePanelView(discord.ui.View):
         await interaction.response.send_message(embed=emb, ephemeral=True)
         await self.bot.audit(interaction, action="panel_show", result="ok", reason=None)
 
-    @discord.ui.button(label="ヘルプ", style=discord.ButtonStyle.secondary, custom_id="panel:help", row=1)
-    async def help(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.bot.delete_if_old_panel(interaction)
-        await interaction.response.send_message(render.help_text(), ephemeral=True)
-        await self.bot.audit(interaction, action="help", result="ok", reason=None)
-
     async def _handle_state(self, interaction: discord.Interaction, state: str) -> None:
         gid = interaction.guild_id
         if gid is None:
