@@ -20,12 +20,9 @@ def safe(v: str) -> str:
 def build_panel_embed() -> discord.Embed:
     emb = discord.Embed(title="🍪Profile", color=0x95A5A6)
     emb.description = "\n".join([
-        "下のボタンで 状態変更 / 編集 / 表示 / ヘルプ ができます。",
-        "",
-        "状態（色）",
-        "元気=緑 / 通常=青 / 低速=黄 / しんどい=赤",
-        "",
-        "入力制約：リンク禁止・メンション禁止・文字数制限あり",
+        "- 「編集」ボタンでプロフィールを作成",
+        "- 体調や気分で「元気」「通常」「低速」「しんどい」を選択",
+        "- 編集後のメッセージ（青色文章）を削除",
     ])
     return emb
 
