@@ -2,6 +2,11 @@ from __future__ import annotations
 import time
 from typing import Dict, Tuple
 
+from ..models import ProfileData
+
+def should_autopost(profile: ProfileData) -> bool:
+    return bool(profile.vc_autopost_enabled)
+
 class VCAutoPostLimiter:
     def __init__(self, *, global_cooldown_sec: int = 300, vc_cooldown_sec: int = 600):
         self.global_cooldown_sec = global_cooldown_sec

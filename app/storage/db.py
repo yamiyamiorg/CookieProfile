@@ -88,6 +88,7 @@ class Database:
             state_updated_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             public_message_id INTEGER,
+            vc_autopost_enabled INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY (guild_id, user_id)
         )
         """)
@@ -131,6 +132,8 @@ class Database:
         pnames = {r["name"] for r in pcols}
         if "public_message_id" not in pnames:
             await self._exec("ALTER TABLE profiles ADD COLUMN public_message_id INTEGER")
+        if "vc_autopost_enabled" not in pnames:
+            await self._exec("ALTER TABLE profiles ADD COLUMN vc_autopost_enabled INTEGER NOT NULL DEFAULT 1")
 
         # Normalize legacy state labels to current ones.
         await self._exec("UPDATE profiles SET state='元気' WHERE state='好調'")
@@ -187,6 +190,7 @@ class Database:
             state_updated_at=str_to_dt(row["state_updated_at"]),
             updated_at=str_to_dt(row["updated_at"]),
             public_message_id=row["public_message_id"],
+            vc_autopost_enabled=row["vc_autopost_enabled"],
         )
 
     async def update_profile_fields(self, guild_id: int, user_id: int, *, name: str, condition: str, hobby: str, care: str, one: str) -> None:
@@ -215,6 +219,12 @@ class Database:
         WHERE guild_id=? AND user_id=?
         """, (message_id, guild_id, user_id))
 
+    async def set_vc_autopost_enabled(self, guild_id: int, user_id: int, enabled: bool) -> None:
+        await self._exec("""
+        UPDATE profiles SET vc_autopost_enabled=?
+        WHERE guild_id=? AND user_id=?
+        """, (1 if enabled else 0, guild_id, user_id))
+
     async def list_public_profiles_for_refresh(
         self,
         guild_id: int,
@@ -241,6 +251,7 @@ class Database:
                 state_updated_at=str_to_dt(row["state_updated_at"]),
                 updated_at=str_to_dt(row["updated_at"]),
                 public_message_id=row["public_message_id"],
+                vc_autopost_enabled=row["vc_autopost_enabled"],
             )
             for row in rows
         ]

@@ -147,6 +147,31 @@ class ProfilePanelView(discord.ui.View):
         await interaction.response.send_message(embed=emb, ephemeral=True)
         await self.bot.audit(interaction, action="panel_show", result="ok", reason=None)
 
+    @discord.ui.button(label="自動表示：ON", style=discord.ButtonStyle.secondary, custom_id="panel:autopost", row=0)
+    async def toggle_autopost(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gid = interaction.guild_id
+        if gid is None:
+            return
+        await self.bot.delete_if_old_panel(interaction)
+
+        if not self.bot.limiter.allow(gid, interaction.user.id, "vc_autopost_toggle"):
+            await interaction.response.send_message(RATE_LIMIT_MSG, ephemeral=True)
+            await self.bot.audit(interaction, action="vc_autopost_toggle", result="ng", reason="rate_limit")
+            return
+
+        profile = await self.bot.db.get_profile(gid, interaction.user.id)
+        enabled = not bool(profile.vc_autopost_enabled)
+        await self.bot.db.set_vc_autopost_enabled(gid, interaction.user.id, enabled)
+        button.label = "自動表示：ON" if enabled else "自動表示：OFF"
+        try:
+            if interaction.message:
+                await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        await interaction.response.send_message(f"自動表示を{'ON' if enabled else 'OFF'}にしました。", ephemeral=True)
+        await self.bot.audit(interaction, action="vc_autopost_toggle", result="ok", reason=None)
+
 class PConfirmView(discord.ui.View):
     """
     Ephemeral confirm view for /p.
@@ -228,4 +253,3 @@ class PConfirmView(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="キャンセルしました。", embed=None, view=None)
         await self.bot.audit(interaction, action="p_cancel", result="ok", reason=None)
-

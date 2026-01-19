@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from ..config import AppConfig
 from ..storage.db import Database, utcnow
 from ..services.rate_limit import RateLimiter
-from ..services.vc_autopost import VCAutoPostLimiter
+from ..services.vc_autopost import VCAutoPostLimiter, should_autopost
 from ..services.audit import make_log_line
 from ..services import render
 from .views import ProfilePanelView
@@ -335,6 +335,8 @@ class CookieProfileBot(commands.Bot):
                 if not self.vc_autopost_limiter.allow(member.guild.id, member.id, channel.id):
                     return
                 prof = await self.db.get_profile(member.guild.id, member.id)
+                if not should_autopost(prof):
+                    return
                 if not (prof.name or "").strip():
                     return
                 emb = render.build_profile_embed(

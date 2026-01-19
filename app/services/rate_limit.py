@@ -8,6 +8,7 @@ class RateLimits:
     modal_save_sec: int = 60
     state_change_sec: int = 20
     panel_bump_sec: int = 30  # bump at most once per 30s per guild
+    vc_autopost_toggle_sec: int = 30
 
 DEFAULT_LIMITS = RateLimits()
 
@@ -21,6 +22,7 @@ class RateLimiter:
             "modal_save": self.limits.modal_save_sec,
             "state_change": self.limits.state_change_sec,
             "panel_bump": self.limits.panel_bump_sec,
+            "vc_autopost_toggle": self.limits.vc_autopost_toggle_sec,
         }.get(action, 0)
 
     def allow(self, guild_id: int, user_id: int, action: str) -> bool:
