@@ -17,6 +17,7 @@ class ProfileData:
     state_updated_at: datetime
     updated_at: datetime
     public_message_id: int | None  # profile message in configured channel
+    vc_autopost_enabled: int
 
 @dataclass
 class GuildConfigData:

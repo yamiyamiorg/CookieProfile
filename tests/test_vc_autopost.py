@@ -1,17 +1,31 @@
-import time
 import unittest
+from datetime import datetime, timezone
 
-from app.services.vc_autopost import VCAutoPostLimiter
+from app.models import ProfileData
+from app.services.vc_autopost import should_autopost
 
-class TestVCAutoPostLimiter(unittest.TestCase):
-    def test_global_cooldown_blocks_other_vc(self):
-        limiter = VCAutoPostLimiter(global_cooldown_sec=5, vc_cooldown_sec=10)
-        self.assertTrue(limiter.allow(1, 2, 100))
-        self.assertFalse(limiter.allow(1, 2, 101))
+class TestVCAutoPost(unittest.TestCase):
+    def _profile(self, enabled: int) -> ProfileData:
+        now = datetime.now(timezone.utc)
+        return ProfileData(
+            guild_id=1,
+            user_id=2,
+            name="test",
+            condition="",
+            hobby="",
+            care="",
+            one="",
+            state="通常",
+            state_updated_at=now,
+            updated_at=now,
+            public_message_id=None,
+            vc_autopost_enabled=enabled,
+        )
 
-    def test_vc_cooldown_blocks_same_vc(self):
-        limiter = VCAutoPostLimiter(global_cooldown_sec=5, vc_cooldown_sec=10)
-        self.assertTrue(limiter.allow(1, 2, 100))
-        limiter._last_global[(1, 2)] = time.time() - 6
-        limiter._last_vc[(1, 2, 100)] = time.time() - 1
-        self.assertFalse(limiter.allow(1, 2, 100))
+    def test_should_autopost_on(self):
+        prof = self._profile(1)
+        self.assertTrue(should_autopost(prof))
+
+    def test_should_autopost_off(self):
+        prof = self._profile(0)
+        self.assertFalse(should_autopost(prof))
