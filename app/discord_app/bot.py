@@ -190,8 +190,6 @@ class CookieProfileBot(commands.Bot):
                 emb = render.build_profile_embed(
                     display_name=member.display_name,
                     avatar_url=member.display_avatar.url if member.display_avatar else None,
-                    state=prof.state,
-                    state_updated_at=prof.state_updated_at,
                     name=prof.name,
                     condition=prof.condition,
                     hobby=prof.hobby,
@@ -261,8 +259,6 @@ class CookieProfileBot(commands.Bot):
         emb = render.build_profile_embed(
             display_name=interaction.user.display_name,
             avatar_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None,
-            state=prof.state,
-            state_updated_at=prof.state_updated_at,
             name=prof.name,
             condition=prof.condition,
             hobby=prof.hobby,

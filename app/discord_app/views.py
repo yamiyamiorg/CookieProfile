@@ -115,25 +115,8 @@ class ProfilePanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
 
-    # Row 0: state buttons (color coded)
-    @discord.ui.button(label="元気", style=discord.ButtonStyle.success, custom_id="panel:state:good", row=0)
-    async def st_good(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "元気")
-
-    @discord.ui.button(label="通常", style=discord.ButtonStyle.primary, custom_id="panel:state:norm", row=0)
-    async def st_norm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "通常")
-
-    @discord.ui.button(label="低速", style=discord.ButtonStyle.secondary, custom_id="panel:state:low", row=0)
-    async def st_low(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "低速")
-
-    @discord.ui.button(label="しんどい", style=discord.ButtonStyle.danger, custom_id="panel:state:rest", row=0)
-    async def st_rest(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_state(interaction, "しんどい")
-
-    # Row 1: actions (color coded)
-    @discord.ui.button(label="編集", style=discord.ButtonStyle.primary, custom_id="panel:edit", row=1)
+    # Row 0: actions
+    @discord.ui.button(label="編集", style=discord.ButtonStyle.primary, custom_id="panel:edit", row=0)
     async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
         gid = interaction.guild_id
         if gid is None:
@@ -144,7 +127,7 @@ class ProfilePanelView(discord.ui.View):
         defaults = {"name": profile.name, "condition": profile.condition, "hobby": profile.hobby, "care": profile.care, "one": profile.one}
         await interaction.response.send_modal(ProfileEditModal(self.bot, defaults))
 
-    @discord.ui.button(label="表示", style=discord.ButtonStyle.secondary, custom_id="panel:show", row=1)
+    @discord.ui.button(label="表示", style=discord.ButtonStyle.secondary, custom_id="panel:show", row=0)
     async def show(self, interaction: discord.Interaction, button: discord.ui.Button):
         gid = interaction.guild_id
         if gid is None:
@@ -155,8 +138,6 @@ class ProfilePanelView(discord.ui.View):
         emb = render.build_profile_embed(
             display_name=interaction.user.display_name,
             avatar_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None,
-            state=profile.state,
-            state_updated_at=profile.state_updated_at,
             name=profile.name,
             condition=profile.condition,
             hobby=profile.hobby,
@@ -166,24 +147,6 @@ class ProfilePanelView(discord.ui.View):
         await interaction.response.send_message(embed=emb, ephemeral=True)
         await self.bot.audit(interaction, action="panel_show", result="ok", reason=None)
 
-    async def _handle_state(self, interaction: discord.Interaction, state: str) -> None:
-        gid = interaction.guild_id
-        if gid is None:
-            return
-        await self.bot.delete_if_old_panel(interaction)
-
-        if not self.bot.limiter.allow(gid, interaction.user.id, "state_change"):
-            await interaction.response.send_message(RATE_LIMIT_MSG, ephemeral=True)
-            await self.bot.audit(interaction, action="state_change", result="ng", reason="rate_limit")
-            return
-
-        _ = await self.bot.db.get_profile(gid, interaction.user.id)
-        await self.bot.db.update_state(gid, interaction.user.id, state)
-        await interaction.response.send_message(f"状態を「{state}」にしました。", ephemeral=True)
-        await self.bot.audit(interaction, action="state_change", result="ok", reason=None)
-
-        await self.bot.upsert_public_profile(interaction)
-
 class PConfirmView(discord.ui.View):
     """
     Ephemeral confirm view for /p.
@@ -192,25 +155,8 @@ class PConfirmView(discord.ui.View):
         super().__init__(timeout=180)
         self.bot = bot
 
-    # Row 0: state buttons (color coded)
-    @discord.ui.button(label="元気", style=discord.ButtonStyle.success, row=0)
-    async def st_good(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "元気")
-
-    @discord.ui.button(label="通常", style=discord.ButtonStyle.primary, row=0)
-    async def st_norm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "通常")
-
-    @discord.ui.button(label="低速", style=discord.ButtonStyle.secondary, row=0)
-    async def st_low(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "低速")
-
-    @discord.ui.button(label="しんどい", style=discord.ButtonStyle.danger, row=0)
-    async def st_rest(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._state(interaction, "しんどい")
-
-    # Row 1: actions (color coded)
-    @discord.ui.button(label="プレビュー", style=discord.ButtonStyle.secondary, row=1)
+    # Row 0: actions
+    @discord.ui.button(label="プレビュー", style=discord.ButtonStyle.secondary, row=0)
     async def preview(self, interaction: discord.Interaction, button: discord.ui.Button):
         gid = interaction.guild_id
         if gid is None:
@@ -219,8 +165,6 @@ class PConfirmView(discord.ui.View):
         emb = render.build_profile_embed(
             display_name=interaction.user.display_name,
             avatar_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None,
-            state=profile.state,
-            state_updated_at=profile.state_updated_at,
             name=profile.name,
             condition=profile.condition,
             hobby=profile.hobby,
@@ -230,7 +174,7 @@ class PConfirmView(discord.ui.View):
         await interaction.response.edit_message(content="プレビューです。", embed=emb, view=self)
         await self.bot.audit(interaction, action="p_preview", result="ok", reason=None)
 
-    @discord.ui.button(label="投稿する", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="投稿する", style=discord.ButtonStyle.primary, row=0)
     async def post(self, interaction: discord.Interaction, button: discord.ui.Button):
         gid = interaction.guild_id
         if gid is None:
@@ -261,8 +205,6 @@ class PConfirmView(discord.ui.View):
         emb = render.build_profile_embed(
             display_name=interaction.user.display_name,
             avatar_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None,
-            state=profile.state,
-            state_updated_at=profile.state_updated_at,
             name=profile.name,
             condition=profile.condition,
             hobby=profile.hobby,
@@ -282,23 +224,8 @@ class PConfirmView(discord.ui.View):
         await interaction.response.edit_message(content="投稿しました。（30分後に自動削除）", embed=None, view=None)
         await self.bot.audit(interaction, action="p_post", result="ok", reason=None)
 
-    @discord.ui.button(label="やめる", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="やめる", style=discord.ButtonStyle.danger, row=0)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="キャンセルしました。", embed=None, view=None)
         await self.bot.audit(interaction, action="p_cancel", result="ok", reason=None)
 
-    async def _state(self, interaction: discord.Interaction, state: str) -> None:
-        gid = interaction.guild_id
-        if gid is None:
-            return
-        if not self.bot.limiter.allow(gid, interaction.user.id, "state_change"):
-            await interaction.response.send_message(RATE_LIMIT_MSG, ephemeral=True)
-            await self.bot.audit(interaction, action="state_change", result="ng", reason="rate_limit")
-            return
-
-        _ = await self.bot.db.get_profile(gid, interaction.user.id)
-        await self.bot.db.update_state(gid, interaction.user.id, state)
-        await interaction.response.edit_message(content=f"状態を「{state}」にしました。", view=self)
-        await self.bot.audit(interaction, action="state_change", result="ok", reason=None)
-
-        await self.bot.upsert_public_profile(interaction)
