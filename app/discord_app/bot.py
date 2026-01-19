@@ -91,6 +91,156 @@ class CookieProfileBot(commands.Bot):
             except Exception:
                 pass
 
+    async def audit_system(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        action: str,
+        result: str,
+        reason: str | None,
+    ) -> None:
+        cfg = await self.db.get_guild_config(guild_id)
+        if not cfg.log_channel_id:
+            return
+        line = make_log_line(
+            ts=utcnow(),
+            guild_id=guild_id,
+            user_id=user_id,
+            action=action,
+            channel_id=cfg.channel_id,
+            result=result,
+            reason=reason,
+        )
+        ch = self.get_channel(cfg.log_channel_id)
+        if ch:
+            try:
+                await ch.send(line)
+            except Exception:
+                pass
+
+    async def _resolve_profile_display(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        fallback_title: str | None,
+    ) -> tuple[str, str | None]:
+        guild = self.get_guild(guild_id)
+        if guild:
+            member = guild.get_member(user_id)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(user_id)
+                except Exception:
+                    member = None
+            if member:
+                avatar_url = member.display_avatar.url if member.display_avatar else None
+                return member.display_name, avatar_url
+
+        try:
+            user = await self.fetch_user(user_id)
+        except Exception:
+            user = None
+        if user:
+            avatar_url = user.display_avatar.url if user.display_avatar else None
+            return user.name, avatar_url
+
+        if fallback_title and fallback_title.endswith("さんのプロフィール"):
+            return fallback_title.replace("さんのプロフィール", ""), None
+
+        return f"User {user_id}", None
+
+    async def refresh_public_profiles(self, guild_id: int, *, limit: int = 50) -> int:
+        cfg = await self.db.get_guild_config(guild_id)
+        if not cfg.channel_id:
+            return 0
+        ch = self.get_channel(cfg.channel_id)
+        if ch is None:
+            try:
+                ch = await self.fetch_channel(cfg.channel_id)
+            except Exception:
+                return 0
+
+        cursor = await self.db.get_profile_refresh_cursor(guild_id)
+        profiles = await self.db.list_public_profiles_for_refresh(
+            guild_id,
+            after_message_id=cursor,
+            limit=limit,
+        )
+        if not profiles:
+            return 0
+
+        last_message_id = cursor
+        refreshed = 0
+        for prof in profiles:
+            msg_id = prof.public_message_id
+            if not msg_id:
+                continue
+            if msg_id > last_message_id:
+                last_message_id = msg_id
+            try:
+                msg = await ch.fetch_message(msg_id)
+            except discord.NotFound:
+                await self.audit_system(
+                    guild_id=guild_id,
+                    user_id=prof.user_id,
+                    action="refresh_public_profile",
+                    result="ng",
+                    reason="not_found",
+                )
+                continue
+            except discord.Forbidden:
+                await self.audit_system(
+                    guild_id=guild_id,
+                    user_id=prof.user_id,
+                    action="refresh_public_profile",
+                    result="ng",
+                    reason="permission",
+                )
+                continue
+            except Exception:
+                continue
+
+            display_name, avatar_url = await self._resolve_profile_display(
+                guild_id=guild_id,
+                user_id=prof.user_id,
+                fallback_title=msg.embeds[0].title if msg.embeds else None,
+            )
+            emb = render.build_profile_embed(
+                display_name=display_name,
+                avatar_url=avatar_url,
+                name=prof.name,
+                condition=prof.condition,
+                hobby=prof.hobby,
+                care=prof.care,
+                one=prof.one,
+            )
+            try:
+                await msg.edit(embed=emb)
+                refreshed += 1
+            except discord.NotFound:
+                await self.audit_system(
+                    guild_id=guild_id,
+                    user_id=prof.user_id,
+                    action="refresh_public_profile",
+                    result="ng",
+                    reason="not_found",
+                )
+            except discord.Forbidden:
+                await self.audit_system(
+                    guild_id=guild_id,
+                    user_id=prof.user_id,
+                    action="refresh_public_profile",
+                    result="ng",
+                    reason="permission",
+                )
+            except Exception:
+                pass
+
+        await self.db.set_profile_refresh_cursor(guild_id, last_message_id)
+        return refreshed
+
     async def delete_if_old_panel(self, interaction: discord.Interaction) -> None:
         gid = interaction.guild_id
         if gid is None or not interaction.message:
@@ -305,6 +455,7 @@ class SetupCommands(app_commands.Group):
         channel: discord.TextChannel,
         log_channel: discord.TextChannel | None = None,
     ):
+        await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if gid is None:
             return
@@ -331,7 +482,8 @@ class SetupCommands(app_commands.Group):
         # Post new panel and remove old one (best-effort)
         await self.bot.ensure_sticky_panel(gid)
 
-        await interaction.response.send_message("入口メッセージを設置/更新しました。", ephemeral=True)
+        await self.bot.refresh_public_profiles(gid, limit=50)
+        await interaction.followup.send("入口メッセージを設置/更新しました。", ephemeral=True)
 
 
 def create_bot() -> CookieProfileBot:

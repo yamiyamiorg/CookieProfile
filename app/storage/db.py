@@ -100,6 +100,12 @@ class Database:
             PRIMARY KEY (guild_id, channel_id, message_id)
         )
         """)
+        await self._exec("""
+        CREATE TABLE IF NOT EXISTS profile_refresh_progress(
+            guild_id INTEGER PRIMARY KEY,
+            last_public_message_id INTEGER NOT NULL DEFAULT 0
+        )
+        """)
 
         # ---- schema migration (backward compatible) ----
         # Older deployments may have different column names. We add missing columns in-place.
@@ -208,6 +214,52 @@ class Database:
         UPDATE profiles SET public_message_id=?
         WHERE guild_id=? AND user_id=?
         """, (message_id, guild_id, user_id))
+
+    async def list_public_profiles_for_refresh(
+        self,
+        guild_id: int,
+        *,
+        after_message_id: int,
+        limit: int,
+    ) -> list[ProfileData]:
+        rows = await self._fetchall("""
+        SELECT * FROM profiles
+        WHERE guild_id=? AND public_message_id IS NOT NULL AND public_message_id > ?
+        ORDER BY public_message_id ASC
+        LIMIT ?
+        """, (guild_id, after_message_id, limit))
+        return [
+            ProfileData(
+                guild_id=row["guild_id"],
+                user_id=row["user_id"],
+                name=row["name"],
+                condition=row["condition"],
+                hobby=row["hobby"],
+                care=row["care"],
+                one=row["one"],
+                state=row["state"],
+                state_updated_at=str_to_dt(row["state_updated_at"]),
+                updated_at=str_to_dt(row["updated_at"]),
+                public_message_id=row["public_message_id"],
+            )
+            for row in rows
+        ]
+
+    async def get_profile_refresh_cursor(self, guild_id: int) -> int:
+        row = await self._fetchone("""
+        SELECT last_public_message_id FROM profile_refresh_progress WHERE guild_id=?
+        """, (guild_id,))
+        if not row:
+            return 0
+        return int(row["last_public_message_id"] or 0)
+
+    async def set_profile_refresh_cursor(self, guild_id: int, last_public_message_id: int) -> None:
+        await self._exec("""
+        INSERT INTO profile_refresh_progress(guild_id, last_public_message_id)
+        VALUES(?,?)
+        ON CONFLICT(guild_id) DO UPDATE SET
+            last_public_message_id=excluded.last_public_message_id
+        """, (guild_id, last_public_message_id))
 
     # scheduled deletes
     async def schedule_delete(self, guild_id: int, channel_id: int, message_id: int, delete_at: datetime) -> None:
